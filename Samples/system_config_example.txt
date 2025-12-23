@@ -1,0 +1,53 @@
+﻿###############################################################################
+# SYSTEM SSH CONFIG – ROUTING ONLY
+# Location: C:\ProgramData\ssh\ssh_config
+###############################################################################
+###############################################################################
+# PRIMARY ENTRY BASTION
+###############################################################################
+Host jumpex
+    HostName jumpex.core.example.net
+    ForwardAgent no
+###############################################################################
+# CUSTOMER BASTIONS (via jumpex)
+###############################################################################
+# --- ACME Corp ---------------------------------------------------------------
+Host jumpac
+    HostName jumpac.acme.net
+    ProxyCommand ssh jumpex -W %h:%p
+# --- FooBar Industries -------------------------------------------------------
+Host jumpfo
+    HostName jumpfo.foobar.internal
+    ProxyCommand ssh jumpex -W %h:%p
+# --- Zenith Labs -------------------------------------------------------------
+Host jumpze
+    HostName jumpze.zenith.lab
+    ProxyCommand ssh jumpex -W %h:%p
+###############################################################################
+# CUSTOMER HOST ROUTING
+###############################################################################
+# --- ACME Corp ---------------------------------------------------------------
+# Short names only (avoid double-FQDN expansion)
+Host ac* !*.acme.com
+    HostName %h.acme.com
+    ProxyCommand ssh jumpac -W %h:%p
+# FQDNs and internal IP range
+Host *.acme.com 192.168.19.*
+    ProxyCommand ssh jumpac -W %h:%p
+# --- FooBar Industries -------------------------------------------------------
+Host fo* !*.foobar.local
+    HostName %h.foobar.local
+    ProxyCommand ssh jumpfo -W %h:%p
+Host *.foobar.local 10.42.0.*
+    ProxyCommand ssh jumpfo -W %h:%p
+# --- Zenith Labs -------------------------------------------------------------
+Host ze* !*.zenith.lab
+    HostName %h.zenith.lab
+    ProxyCommand ssh jumpze -W %h:%p
+Host *.zenith.lab 172.20.5.*
+    ProxyCommand ssh jumpze -W %h:%p
+Host ex* !*.example.com
+    HostName %h.example.com
+###############################################################################
+# END OF SYSTEM ROUTING CONFIG
+###############################################################################

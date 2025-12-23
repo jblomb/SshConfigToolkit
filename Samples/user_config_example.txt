@@ -1,0 +1,64 @@
+###############################################################################
+# USER SSH CONFIG – AUTHENTICATION ONLY
+# Location: ~\.ssh\config
+###############################################################################
+
+
+###############################################################################
+# PRIMARY ENTRY BASTION AUTH
+###############################################################################
+Host jumpex
+    User jumpcore
+    IdentityFile ~/.ssh/id_ed25519_jumpex
+    IdentitiesOnly yes
+
+
+###############################################################################
+# CUSTOMER BASTION AUTH
+###############################################################################
+
+# --- ACME Corp ---------------------------------------------------------------
+Host jumpac
+    User jumpac
+    IdentityFile ~/.ssh/id_ed25519_jumpac
+    IdentitiesOnly yes
+
+# --- FooBar Industries -------------------------------------------------------
+Host jumpfo
+    User jumpfo
+    IdentityFile ~/.ssh/id_ed25519_jumpfo
+    IdentitiesOnly yes
+
+# --- Zenith Labs -------------------------------------------------------------
+Host jumpze
+    User jumpze
+    IdentityFile ~/.ssh/id_ed25519_jumpze
+    IdentitiesOnly yes
+
+
+###############################################################################
+# CUSTOMER ENDPOINT AUTH (consolidated per customer)
+###############################################################################
+
+# --- ACME Corp ---------------------------------------------------------------
+Host ac* *.acme.com 192.168.19.*
+    User ac-admin
+    IdentityFile ~/.ssh/id_ed25519_acme
+    IdentitiesOnly yes
+
+# --- FooBar Industries -------------------------------------------------------
+Host fo* *.foobar.local 10.42.0.*
+    User fo-ops
+    IdentityFile ~/.ssh/id_ed25519_foobar
+    IdentitiesOnly yes
+
+# --- Zenith Labs -------------------------------------------------------------
+Host ze* *.zenith.lab 172.20.5.*
+    User ze-ops
+    IdentityFile ~/.ssh/id_ed25519_zenith
+    IdentitiesOnly yes
+
+
+###############################################################################
+# END OF USER AUTH CONFIG
+###############################################################################
