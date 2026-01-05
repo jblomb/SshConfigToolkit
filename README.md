@@ -81,7 +81,7 @@ Set-SshHostBlock -Patterns @('jump01', 'bastion') -Options @{
 
 | Function | Description |
 |----------|-------------|
-| `Get-SshConfigEntities` | Parses SSH config into structured entities |
+| `Get-SshConfigEntities` | Parses SSH config into entities. Can filter for `Host`, `Bastion`, or `All` types. |
 | `Find-SshHostBlock` | Finds host blocks by exact pattern matching |
 | `Test-SshHostPrecedence` | Validates precedence rules for new patterns |
 | `ConvertFrom-SshHostBlockText` | Parses host block text into options hashtable |
@@ -117,14 +117,15 @@ The parser recognizes these entity types:
 
 ```powershell
 [PSCustomObject]@{
-    Type      = 'HostBlock'     # Entity type
-    StartLine = 10              # 1-indexed line number
-    EndLine   = 14              # 1-indexed line number
-    RawText   = "Host myserver`n    HostName 10.0.1.50"
+    Type           = 'HostBlock'     # Entity type
+    StartLine      = 10              # 1-indexed line number
+    EndLine        = 14              # 1-indexed line number
+    RawText        = "Host myserver`n    HostName 10.0.1.50"
     # HostBlock-specific:
-    HostLine  = 'Host myserver'
-    Patterns  = @('myserver')
-    IsBastion = $false
+    HostLine       = 'Host myserver'
+    Patterns       = @('myserver')
+    IsBastion      = $true
+    DependentHosts = @('client-host-1', 'client-host-2')
 }
 ```
 
@@ -179,6 +180,26 @@ foreach ($server in $servers) {
 }
 
 Save-SshConfig -Entities $entities -Path $path
+```
+
+### Listing Bastions and Dependent Hosts
+
+The `Get-SshConfigEntities` function can identify which hosts serve as bastions and which hosts depend on them.
+
+```powershell
+# Get all entities identified as bastions
+$bastions = Get-SshConfigEntities -Path "~/.ssh/config" -Type Bastion
+
+foreach ($bastion in $bastions) {
+    $patterns = $bastion.Patterns -join ', '
+    Write-Host "Bastion '$patterns' is used by:"
+    
+    if ($bastion.DependentHosts.Count -gt 0) {
+        $bastion.DependentHosts | ForEach-Object { Write-Host "  - $_" }
+    } else {
+        Write-Host "  (No dependent hosts found)"
+    }
+}
 ```
 
 ### Precedence Checking
@@ -303,15 +324,23 @@ try {
 
 ## Version History
 
+### v1.4.0 (2026-01-05)
+- Corrected how host/bastion names were extracted in Pester tests to handle PowerShell's member-access enumeration correctly.
+- Added `-Type` parameter to `Get-SshConfigEntities` to filter for `Host`, `Bastion`, or `All` entities.
+- Enriched `HostBlock` entities with a `DependentHosts` property to list hosts that use it as a `ProxyJump`.
+- Explicitly cast `DependentHosts` property to `[string[]]` to prevent potential type issues with consumers.
+
+### v1.3.0 (2025-12-28)
+- Added support for `Match` blocks in the parser (creates `MatchBlock` entity).
+
+### v1.2.0 (2025-12-25)
+- Improved bastion detection logic to check for `ProxyCommand` or `ProxyJump` presence.
+
 ### v1.1.0 (2025-12-23)
-- Added `Get-SshHostBlock` for reading host configurations
-- Added `ConvertFrom-SshHostBlockText` for parsing options
-- Added `Rename-SshHostBlock` for pattern changes
-- Added `Match` block support in parser
-- Fixed negation pattern (`!`) handling in precedence checks
-- Improved bastion detection
-- Added comprehensive Pester test suite
-- Packaged as proper PowerShell module
+- Added `Get-SshHostBlock`, `ConvertFrom-SshHostBlockText`, and `Rename-SshHostBlock` cmdlets.
+- Fixed negation pattern (`!`) handling in precedence checks.
+- Added comprehensive Pester test suite.
+- Packaged as proper PowerShell module.
 
 ### v1.0.0 (2025-12-23)
 - Initial release with complete CRUD operations

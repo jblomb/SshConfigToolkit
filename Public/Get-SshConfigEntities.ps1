@@ -7,19 +7,29 @@
     This function reads an SSH configuration file and parses it into distinct 
     entities such as HostBlock, MatchBlock, CommentBlock, BlankBlock, and OtherBlock. 
     Each entity includes metadata about its type, line range, and raw text content. 
-    Host blocks are further analyzed to identify bastion/jump hosts based on naming 
-    patterns and configuration options.
+    Host blocks are further analyzed to identify bastion/jump hosts based on 
+    `ProxyJump` or `ProxyCommand` usage.
 
 .PARAMETER Path
     The full path to the SSH configuration file to parse. The file must exist or 
     an error will be thrown.
 
+.PARAMETER Type
+    Filters the output to include only specific types of host blocks.
+    - All: (Default) Returns all entities, including non-host blocks.
+    - Host: Returns only HostBlocks that are not identified as bastions.
+    - Bastion: Returns only HostBlocks that are used as a `ProxyJump` or 
+      `ProxyCommand` target by other hosts.
+
 .NOTES
     Author: Jan Blomberg
-    Date: 2025-12-23
-    Version: 1.3
+    Date: 2026-01-05
+    Version: 1.6
     
     Version History:
+    1.6 - Added HostName, ProxyCommand, and ProxyJump properties to HostBlock entities
+    1.5 - Added ProxyCommand support for bastion detection (handles "ssh <host> -W %h:%p" format)
+    1.4 - Added -Type parameter and improved bastion detection.
     1.3 - Added Match block support
     1.2 - Improved bastion detection (checks ProxyCommand/ProxyJump presence)
     1.1 - Fixed bug where single-pattern hosts were stored as strings instead of arrays
@@ -27,6 +37,8 @@
     LIMITATIONS:
     - Include directives are parsed but not followed. Each included file must be 
       managed separately.
+    - ProxyCommand parsing assumes the format "ssh <bastion> ..." where the bastion
+      hostname immediately follows the ssh command.
 
 .EXAMPLE
     Get-SshConfigEntities -Path "C:\Users\username\.ssh\config"
@@ -34,10 +46,13 @@
     Parses the specified SSH config file and returns a collection of entity objects.
 
 .EXAMPLE
-    $entities = Get-SshConfigEntities -Path "$env:USERPROFILE\.ssh\config"
-    $bastionHosts = $entities | Where-Object { $_.Type -eq 'HostBlock' -and $_.IsBastion }
+    $entities = Get-SshConfigEntities -Path "$env:USERPROFILE\.ssh\config" -Type Bastion
+    $entities | ForEach-Object {
+        Write-Host "Bastion: $($_.Patterns -join ', ')"
+        Write-Host "  Dependent Hosts: $($_.DependentHosts -join ', ')"
+    }
     
-    Retrieves all bastion/jump host entries from the SSH config.
+    Retrieves all bastion hosts and lists the hosts that depend on them.
 
 .EXAMPLE
     $entities = Get-SshConfigEntities -Path "~/.ssh/config"
@@ -49,7 +64,11 @@ function Get-SshConfigEntities {
     [CmdletBinding()]
     param (
         [Parameter(Mandatory)]
-        [string]$Path
+        [string]$Path,
+
+        [Parameter()]
+        [ValidateSet('All', 'Host', 'Bastion')]
+        [string]$Type = 'All'
     )
 
     # Resolve path (handles ~ and relative paths)
@@ -76,25 +95,6 @@ function Get-SshConfigEntities {
     $startLine   = $null
     $buffer      = @()
 
-    # Helper function to detect if a host block is a bastion
-    # Checks both naming convention AND absence of proxy settings
-    function Test-IsBastion {
-        param(
-            [string[]]$Patterns,
-            [string]$RawText
-        )
-        
-        # Check naming convention (jump* pattern)
-        $hasJumpPattern = ($Patterns | Where-Object { $_ -like 'jump*' -or $_ -like 'bastion*' }).Count -gt 0
-        
-        # Check if it has ProxyCommand or ProxyJump (bastions typically don't)
-        $hasProxyConfig = $RawText -match '(?mi)^\s+(ProxyCommand|ProxyJump)\s+'
-        
-        # A bastion is identified by jump/bastion naming OR no proxy config
-        # But we prioritize the naming convention as the primary indicator
-        return $hasJumpPattern
-    }
-
     # Define helper function to flush accumulated lines into a structured entity object
     function Flush-Entity {
         param (
@@ -120,7 +120,7 @@ function Get-SshConfigEntities {
             RawText   = $rawText
         }
 
-        # Enrich HostBlock entities with parsed host patterns and bastion detection
+        # Enrich HostBlock entities with parsed host patterns
         if ($Type -eq 'HostBlock') {
             $hostLine = $Lines[0]
 
@@ -132,14 +132,31 @@ function Get-SshConfigEntities {
                 $patterns = @()
             }
 
-            # Detect bastion using both naming and config analysis
-            $isBastion = Test-IsBastion -Patterns $patterns -RawText $rawText
-
             $entity | Add-Member -NotePropertyName HostLine  -NotePropertyValue $hostLine.Trim()
             # Use explicit [string[]] type to prevent PowerShell from unwrapping single-element arrays
             [string[]]$patternsArray = $patterns
             $entity | Add-Member -NotePropertyName Patterns  -NotePropertyValue $patternsArray
-            $entity | Add-Member -NotePropertyName IsBastion -NotePropertyValue $isBastion
+
+            # Extract HostName directive value
+            $hostName = $null
+            if ($rawText -match '(?im)^\s+HostName\s+(\S+)') {
+                $hostName = $Matches[1]
+            }
+            $entity | Add-Member -NotePropertyName HostName -NotePropertyValue $hostName
+
+            # Extract ProxyCommand directive value
+            $proxyCommand = $null
+            if ($rawText -match '(?im)^\s+ProxyCommand\s+(.+)$') {
+                $proxyCommand = $Matches[1].Trim()
+            }
+            $entity | Add-Member -NotePropertyName ProxyCommand -NotePropertyValue $proxyCommand
+
+            # Extract ProxyJump directive value
+            $proxyJump = $null
+            if ($rawText -match '(?im)^\s+ProxyJump\s+(\S+)') {
+                $proxyJump = $Matches[1]
+            }
+            $entity | Add-Member -NotePropertyName ProxyJump -NotePropertyValue $proxyJump
         }
 
         # Enrich MatchBlock entities with parsed criteria
@@ -251,6 +268,58 @@ function Get-SshConfigEntities {
 
     Write-Verbose ("Parsing complete. Entities created: {0}" -f $entities.Count)
 
-    # Return the complete collection of parsed SSH config entities
-    return $entities
+    # Post-processing to identify bastions and their dependents
+    $hostBlocks = $entities.Where({ $_.Type -eq 'HostBlock' })
+    if ($hostBlocks.Count -gt 0) {
+        # Create a map of bastion names to the hosts that use them
+        $bastionUsageMap = @{}
+        
+        foreach ($hostBlock in $hostBlocks) {
+            $bastionName = $null
+            
+            # Check ProxyJump first (simpler format: direct hostname)
+            if ($hostBlock.RawText -match '(?im)^\s+ProxyJump\s+([^\s]+)') {
+                $bastionName = $Matches[1]
+            }
+            # Check ProxyCommand (extract hostname from "ssh <bastion> ..." pattern)
+            elseif ($hostBlock.RawText -match '(?im)^\s+ProxyCommand\s+ssh\s+(\S+)') {
+                $bastionName = $Matches[1]
+            }
+            
+            if ($bastionName) {
+                if (-not $bastionUsageMap.ContainsKey($bastionName)) {
+                    $bastionUsageMap[$bastionName] = [System.Collections.Generic.List[string]]::new()
+                }
+                $bastionUsageMap[$bastionName].AddRange($hostBlock.Patterns)
+            }
+        }
+
+        # Enrich host blocks with bastion information
+        foreach ($hostBlock in $hostBlocks) {
+            $isBastion = $false
+            $dependentHosts = [System.Collections.Generic.List[string]]::new()
+
+            foreach ($pattern in $hostBlock.Patterns) {
+                if ($bastionUsageMap.ContainsKey($pattern)) {
+                    $isBastion = $true
+                    $dependentHosts.AddRange($bastionUsageMap[$pattern])
+                }
+            }
+            
+            # Add new properties
+            $hostBlock | Add-Member -NotePropertyName IsBastion -NotePropertyValue $isBastion
+            $hostBlock | Add-Member -NotePropertyName DependentHosts -NotePropertyValue ([string[]]@($dependentHosts | Select-Object -Unique))
+        }
+    }
+
+    # Filter entities based on the -Type parameter
+    if ($Type -eq 'All') {
+        return $entities
+    }
+    elseif ($Type -eq 'Bastion') {
+        return $entities.Where({ $_.Type -eq 'HostBlock' -and $_.IsBastion })
+    }
+    elseif ($Type -eq 'Host') {
+        return $entities.Where({ $_.Type -eq 'HostBlock' -and -not $_.IsBastion })
+    }
 }
