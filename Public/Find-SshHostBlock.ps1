@@ -1,90 +1,118 @@
 <#
 .SYNOPSIS
-    Searches for a specific SSH host block by matching host patterns exactly.
+    Finds a specific SSH host block, either by exact pattern definition or by resolving a hostname.
 
 .DESCRIPTION
-    This function locates a HostBlock entity within a collection of parsed SSH config entities by 
-    performing case-sensitive, order-sensitive pattern matching. It ensures that the patterns match 
-    exactly (same count, same order, same case) and throws an error if duplicate host blocks are found.
+    This function has two modes:
+    1. Default: Locates a HostBlock entity by performing an exact, case-sensitive match on its defined patterns.
+    2. Resolve: Finds the first HostBlock entity that would apply to a given hostname, mimicking the way ssh.exe resolves hosts (respecting wildcards, negation, and file order).
 
 .PARAMETER Entities
     A collection of SSH config entities (typically returned from Get-SshConfigEntities) to search through.
 
 .PARAMETER Patterns
-    An array of host patterns to match. The match must be exact: same number of patterns, same order, 
-    and case-sensitive comparison.
+    (Default Parameter Set) An array of host patterns to match exactly.
+
+.PARAMETER HostNameToResolve
+    (Resolve Parameter Set) The hostname to resolve against the configuration to find the first applicable host block.
 
 .NOTES
     Author: Jan Blomberg
-    Date: 2025-12-22
-    Version: 1.1
-    
-    Version History:
-    1.1 - Fixed bug where Sort-Object could unwrap single-element arrays
+    Date: 2026-01-05
+    Version: 2.0
 
 .EXAMPLE
+    # Mode 1: Find by exact definition
     $entities = Get-SshConfigEntities -Path "~/.ssh/config"
-    $hostBlock = Find-SshHostBlock -Entities $entities -Patterns @('myserver', 'myserver.local')
-    
-    Finds the host block that matches both patterns exactly.
+    Find-SshHostBlock -Entities $entities -Patterns @('ac*', '!*.acme.com')
 
 .EXAMPLE
-    Find-SshHostBlock -Entities $configEntities -Patterns 'jump01'
-    
-    Searches for a host block with a single pattern 'jump01' (case-sensitive).
+    # Mode 2: Resolve a hostname to see which block applies
+    Find-SshHostBlock -Entities $entities -HostNameToResolve 'acme-web-prod'
 #>
 function Find-SshHostBlock {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'FindByPatterns')]
     param(
         [Parameter(Mandatory)]
         [System.Collections.IEnumerable]$Entities,
 
-        [Parameter(Mandatory)]
-        [string[]]$Patterns
+        [Parameter(Mandatory, ParameterSetName = 'FindByPatterns')]
+        [string[]]$Patterns,
+
+        [Parameter(Mandatory, ParameterSetName = 'ResolveByHostName')]
+        [string]$HostNameToResolve
     )
 
-    # Define helper function to normalize input into consistent array format
-    function Normalize {
-        param([object]$v)
-        if ($v -is [string]) { return @($v) }
-        return @($v)
-    }
+    if ($PSCmdlet.ParameterSetName -eq 'ResolveByHostName') {
+        # MODE 2: Resolve hostname against all host blocks
+        foreach ($entity in $Entities) {
+            if ($entity.Type -ne 'HostBlock') {
+                continue
+            }
 
-    # Normalize and sort the target patterns for case-sensitive comparison
-    # Force array type after Sort-Object to prevent single-element unwrapping
-    $wanted = @(Normalize $Patterns | Sort-Object -CaseSensitive)
-    $matches = New-Object System.Collections.Generic.List[object]
+            $positivePatterns = $entity.Patterns.Where({ $_ -notlike '!*' })
+            $negativePatterns = $entity.Patterns.Where({ $_ -like '!*' })
 
-    # Iterate through all entities to find HostBlock entries with matching patterns
-    foreach ($entity in $Entities) {
-        if ($entity.Type -ne 'HostBlock') { continue }
-        if (-not $entity.Patterns) { continue }
+            $isNegativeMatch = $false
+            foreach ($pattern in $negativePatterns) {
+                $wildcard = [System.Management.Automation.WildcardPattern]::new($pattern.Substring(1), [System.Management.Automation.WildcardOptions]::IgnoreCase)
+                if ($wildcard.IsMatch($HostNameToResolve)) {
+                    $isNegativeMatch = $true
+                    break
+                }
+            }
 
-        # Force array type after Sort-Object to prevent single-element unwrapping
-        $existing = @(Normalize $entity.Patterns | Sort-Object -CaseSensitive)
+            if ($isNegativeMatch) {
+                continue # A negative pattern matched, so this block is disqualified.
+            }
 
-        # Skip if pattern counts don't match (must be exact match)
-        if ($existing.Count -ne $wanted.Count) { continue }
+            $isPositiveMatch = $false
+            foreach ($pattern in $positivePatterns) {
+                $wildcard = [System.Management.Automation.WildcardPattern]::new($pattern, [System.Management.Automation.WildcardOptions]::IgnoreCase)
+                if ($wildcard.IsMatch($HostNameToResolve)) {
+                    $isPositiveMatch = $true
+                    break
+                }
+            }
 
-        # Perform case-sensitive, position-sensitive comparison of patterns
-        $equal = $true
-        for ($i = 0; $i -lt $existing.Count; $i++) {
-            if ($existing[$i] -cne $wanted[$i]) {
-                $equal = $false
-                break
+            if ($isPositiveMatch) {
+                # This is the first block that matches. Return it.
+                return $entity
+            }
+        }
+        # No matching block found
+        return $null
+
+    } else {
+        # MODE 1: Find by exact pattern definition (original logic)
+        $wanted = @($Patterns | Sort-Object -CaseSensitive)
+        $matches = New-Object System.Collections.Generic.List[object]
+
+        foreach ($entity in $Entities) {
+            if ($entity.Type -ne 'HostBlock') { continue }
+            if (-not $entity.Patterns) { continue }
+
+            $existing = @($entity.Patterns | Sort-Object -CaseSensitive)
+
+            if ($existing.Count -ne $wanted.Count) { continue }
+
+            $equal = $true
+            for ($i = 0; $i -lt $existing.Count; $i++) {
+                if ($existing[$i] -cne $wanted[$i]) {
+                    $equal = $false
+                    break
+                }
+            }
+
+            if ($equal) {
+                $matches.Add($entity)
             }
         }
 
-        if ($equal) {
-            $matches.Add($entity)
+        if ($matches.Count -gt 1) {
+            throw "Multiple Host blocks found with identical patterns (case-sensitive): $($Patterns -join ' ')"
         }
-    }
 
-    # Validate that only one host block matches (prevent ambiguous results)
-    if ($matches.Count -gt 1) {
-        throw "Multiple Host blocks found with identical patterns (case-sensitive): $($Patterns -join ' ')"
+        return $matches | Select-Object -First 1
     }
-
-    # Return the single matching host block, or null if no match found
-    return $matches | Select-Object -First 1
 }

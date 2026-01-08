@@ -92,14 +92,14 @@ Describe 'Get-SshConfigEntities' {
         $bastions = Get-SshConfigEntities -Path $script:TestFile -Type Bastion
         $bastions.Count | Should -Be 2
         $bastionNames = $bastions | ForEach-Object { $_.Patterns[0] }
-        $bastionNames | Should -Contain @('jumpex', 'jumpac')
+        @(Compare-Object $bastionNames @('jumpex', 'jumpac')).Count | Should -Be 0
     }
 
     It 'Filters for Host types correctly' {
         $hosts = Get-SshConfigEntities -Path $script:TestFile -Type Host
         $hosts.Count | Should -Be 3
         $hostNames = $hosts | ForEach-Object { $_.Patterns[0] }
-        $hostNames | Should -Contain @('acme-prod', 'acme-dev', 'webserver')
+        @(Compare-Object $hostNames @('acme-prod', 'acme-dev', 'webserver')).Count | Should -Be 0
         $hostNames | Should -Not -Contain @('jumpex', 'jumpac')
     }
 
@@ -120,7 +120,7 @@ Describe 'Get-SshConfigEntities' {
         $jumpac = $bastions | Where-Object { 'jumpac' -in $_.Patterns }
         $jumpac.DependentHosts | Should -Not -BeNullOrEmpty
         $jumpac.DependentHosts.Count | Should -Be 2
-        $jumpac.DependentHosts | Should -Contain @('acme-prod', 'acme-dev')
+        @(Compare-Object $jumpac.DependentHosts @('acme-prod', 'acme-dev')).Count | Should -Be 0
     }
 
     It 'Assigns IsBastion property correctly to all host blocks' {

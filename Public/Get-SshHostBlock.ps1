@@ -1,78 +1,55 @@
 <#
 .SYNOPSIS
-    Retrieves an SSH host block's configuration as a structured object.
+    Retrieves an SSH host block's configuration, either by exact pattern definition or by resolving a hostname.
 
 .DESCRIPTION
-    This function provides a simple way to read SSH host block configurations. It 
-    combines Find-SshHostBlock and ConvertFrom-SshHostBlockText to return a clean 
-    object containing the host patterns, all SSH options as a hashtable, and metadata 
-    about the block's location in the file.
+    This function provides a simple way to read an SSH host block's configuration. It has two modes:
+    1. FindByPatterns (Default): Finds a host block by matching its defined patterns exactly.
+    2. ResolveByHostName: Finds the first host block that applies to a given hostname, mimicking ssh.exe's behavior.
 
 .PARAMETER Path
     The full path to the SSH configuration file. Defaults to the user's SSH config.
 
 .PARAMETER Patterns
-    An array of host patterns to search for. Must match exactly (case-sensitive, 
-    same count, same order).
+    (FindByPatterns set) An array of host patterns to search for. Must match the host definition exactly.
+
+.PARAMETER HostNameToResolve
+    (ResolveByHostName set) The hostname to resolve against the configuration to find the first applicable host block.
 
 .PARAMETER Entities
-    Optional. Pre-parsed entities collection. If not provided, the function will 
-    parse the config file specified by -Path.
+    Optional. A pre-parsed collection of config entities. If not provided, the file at -Path will be parsed.
 
 .NOTES
     Author: Jan Blomberg
-    Date: 2025-12-23
-    Version: 1.0
+    Date: 2026-01-05
+    Version: 2.0
 
 .OUTPUTS
-    PSCustomObject with properties:
-    - Patterns: Array of host patterns
-    - Options: Hashtable of SSH configuration options
-    - IsBastion: Boolean indicating if this is a bastion host
-    - StartLine: Starting line number in the config file
-    - EndLine: Ending line number in the config file
-    - RawText: Original raw text of the block
-
-    Returns $null if the host block is not found.
+    PSCustomObject with the host block's configuration, or $null if not found.
 
 .EXAMPLE
-    $config = Get-SshHostBlock -Patterns 'myserver'
-    $config.Options['HostName']  # Returns the HostName
-    $config.Options['User']      # Returns the User
-
-    Gets configuration for a specific host.
+    # Mode 1: Get a host by its exact pattern definition
+    Get-SshHostBlock -Patterns 'myserver'
 
 .EXAMPLE
-    $config = Get-SshHostBlock -Path "C:\custom\ssh_config" -Patterns @('jump01', 'bastion')
-    if ($config) {
-        Write-Host "Found bastion at lines $($config.StartLine)-$($config.EndLine)"
-        Write-Host "HostName: $($config.Options['HostName'])"
-    }
-
-    Gets configuration from a custom path with multiple patterns.
-
-.EXAMPLE
-    # Check if a host exists and inspect its configuration
-    if ($config = Get-SshHostBlock -Patterns 'webserver') {
-        $config.Options.GetEnumerator() | ForEach-Object {
-            Write-Host "$($_.Key): $($_.Value)"
-        }
-    } else {
-        Write-Host "Host not found"
-    }
-
-    Enumerates all options for a host block.
+    # Mode 2: Get the config that applies to a hostname
+    Get-SshHostBlock -HostNameToResolve 'dev.server.acme.com'
 #>
 function Get-SshHostBlock {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'FindByPatterns')]
     param(
-        [Parameter()]
+        [Parameter(ParameterSetName = 'FindByPatterns')]
+        [Parameter(ParameterSetName = 'ResolveByHostName')]
         [string]$Path,
 
-        [Parameter(Mandatory)]
+        [Parameter(Mandatory, ParameterSetName = 'FindByPatterns')]
         [string[]]$Patterns,
 
-        [Parameter()]
+        [Parameter(Mandatory, ParameterSetName = 'ResolveByHostName')]
+        [string]$HostNameToResolve,
+
+        [Parameter(ParameterSetName = 'FindByPatterns')]
+        [Parameter(ParameterSetName = 'ResolveByHostName')]
         [System.Collections.IEnumerable]$Entities
     )
 
@@ -92,14 +69,21 @@ function Get-SshHostBlock {
             Write-Verbose "SSH config file not found: $Path"
             return $null
         }
-        
+
         Write-Verbose "Parsing SSH config from: $Path"
         $Entities = Get-SshConfigEntities -Path $Path
     }
 
-    # Find the host block
-    Write-Verbose "Searching for patterns: $($Patterns -join ', ')"
-    $hostBlock = Find-SshHostBlock -Entities $Entities -Patterns $Patterns
+    # Find the host block using the appropriate parameter set
+    $findParams = @{ Entities = $Entities }
+    if ($PSCmdlet.ParameterSetName -eq 'ResolveByHostName') {
+        Write-Verbose "Resolving hostname: $HostNameToResolve"
+        $findParams.HostNameToResolve = $HostNameToResolve
+    } else {
+        Write-Verbose "Searching for exact patterns: $($Patterns -join ', ')"
+        $findParams.Patterns = $Patterns
+    }
+    $hostBlock = Find-SshHostBlock @findParams
 
     if (-not $hostBlock) {
         Write-Verbose "Host block not found"
