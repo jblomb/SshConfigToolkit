@@ -138,7 +138,9 @@ function Set-SshHostBlock {
 
     # Convert to mutable list if needed
     if ($entities -isnot [System.Collections.Generic.List[object]]) {
-        $entities = [System.Collections.Generic.List[object]]::new($entities)
+        # By wrapping $entities with @(), we ensure that if it's $null (from an
+        # empty file), it becomes an empty array, preventing the constructor error.
+        $entities = [System.Collections.Generic.List[object]]::new(@($entities))
     }
 
     # Check if host block already exists
@@ -203,8 +205,38 @@ function Set-SshHostBlock {
 
         # Insert the host block
         if ($PSCmdlet.ShouldProcess("SSH config at line $($insertionIndex.InsertAtLine)", "Insert new host block")) {
-            $entities = Insert-SshHostBlock -Entities $entities -InsertionIndex $insertionIndex -BlockText $blockText
-            Write-Verbose "Host block inserted"
+            # WORKAROUND: Insert-SshHostBlock fails parameter binding on an empty collection.
+            # If the entities list is empty (new file), manually construct and add the entities.
+            if ($entities.Count -eq 0) {
+                Write-Verbose "Applying workaround for empty entity list"
+                
+                # Manually create the entities that Insert-SshHostBlock would have.
+                # This logic is partially duplicated from Insert-SshHostBlock.
+                $newHostBlock = [PSCustomObject]@{
+                    Type      = 'HostBlock'
+                    RawText   = $blockText.TrimEnd("`r`n")
+                    HostLine  = ($blockText -split "`r?`n")[0].Trim()
+                    Patterns  = $Patterns
+                    IsBastion = $IsBastion
+                    # StartLine/EndLine are recalculated on save
+                    StartLine = 1
+                    EndLine   = ($blockText -split "`r?`n").Count
+                }
+                $blankAfter = [PSCustomObject]@{
+                    Type      = 'BlankBlock'
+                    RawText   = ''
+                    StartLine = 0 # Placeholder, will be recalculated
+                    EndLine   = 0 # Placeholder, will be recalculated
+                }
+
+                $entities.Add($newHostBlock)
+                $entities.Add($blankAfter)
+                Write-Verbose "Manually inserted new host block and blank line"
+            }
+            else {
+                $entities = Insert-SshHostBlock -Entities $entities -InsertionIndex $insertionIndex -BlockText $blockText
+                Write-Verbose "Host block inserted via Insert-SshHostBlock"
+            }
         }
     }
 
