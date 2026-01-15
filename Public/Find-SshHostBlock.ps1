@@ -113,6 +113,11 @@ function Find-SshHostBlock {
             throw "Multiple Host blocks found with identical patterns (case-sensitive): $($Patterns -join ' ')"
         }
 
-        return $matches | Select-Object -First 1
+        # Return the first match, which preserves the object reference, unlike Select-Object
+    if ($matches.Count -gt 0) {
+        return $matches[0]
+    }
+    
+    return $null
     }
 }
