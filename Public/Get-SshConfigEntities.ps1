@@ -63,7 +63,7 @@
 function Get-SshConfigEntities {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory)]
+        [Parameter()]
         [string]$Path,
 
         [Parameter()]
@@ -71,8 +71,17 @@ function Get-SshConfigEntities {
         [string]$Type = 'All'
     )
 
-    # Resolve path (handles ~ and relative paths)
-    $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    # Determine default SSH config path if not specified
+    if (-not $Path) {
+        if ($IsWindows -or $env:OS -match 'Windows') {
+            $Path = Join-Path $env:USERPROFILE '.ssh\config'
+        } else {
+            $Path = '~/.ssh/config'
+        }
+        $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    }
+
+    Write-Verbose "SSH config path: $Path"
 
     # Validate that the SSH config file exists before attempting to parse
     if (-not (Test-Path $Path)) {
