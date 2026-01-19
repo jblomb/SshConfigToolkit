@@ -126,6 +126,12 @@ function Set-SshHostBlock {
         [switch]$NoBackup
     )
 
+    # Process patterns to handle space-separated values passed as a single string
+    $processedPatterns = @()
+    foreach ($pattern in $Patterns) {
+        $processedPatterns += $pattern.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+    }
+
     # Determine default SSH config path if not specified
     if (-not $Path) {
         if ($IsWindows -or $env:OS -match 'Windows') {
@@ -137,7 +143,7 @@ function Set-SshHostBlock {
     }
 
     Write-Verbose "SSH config path: $Path"
-    Write-Verbose "Patterns: $($Patterns -join ', ')"
+    Write-Verbose "Patterns: $($processedPatterns -join ', ')"
     Write-Verbose "Operation: $(if ($Merge) {'Merge'} else {'Replace'})"
 
     if ($JumpHost) {
@@ -174,7 +180,7 @@ function Set-SshHostBlock {
     }
 
     # Check if host block already exists
-    $existing = Find-SshHostBlock -Entities $entities -Patterns $Patterns
+    $existing = Find-SshHostBlock -Entities $entities -Patterns $processedPatterns
 
     if ($existing) {
         Write-Verbose "Found existing host block at lines $($existing.StartLine)-$($existing.EndLine)"
@@ -197,10 +203,10 @@ function Set-SshHostBlock {
         }
 
         # Generate new block text
-        $blockText = New-SshHostBlockText -Patterns $Patterns -Options $finalOptions
+        $blockText = New-SshHostBlockText -Patterns $processedPatterns -Options $finalOptions
 
         # Update the host block
-        if ($PSCmdlet.ShouldProcess("Host block '$($Patterns -join ' ')'", "Update")) {
+        if ($PSCmdlet.ShouldProcess("Host block '$($processedPatterns -join ' ')'", "Update")) {
             $entities = Update-SshHostBlock -Entities $entities -HostBlock $existing -BlockText $blockText
             Write-Verbose "Host block updated"
         }
@@ -211,7 +217,7 @@ function Set-SshHostBlock {
         # Check precedence if requested
         if ($CheckPrecedence) {
             Write-Verbose "Checking precedence rules..."
-            $precedenceCheck = Test-SshHostPrecedence -Entities $entities -NewPatterns $Patterns
+            $precedenceCheck = Test-SshHostPrecedence -Entities $entities -NewPatterns $processedPatterns
             
             if (-not $precedenceCheck.Safe) {
                 throw "Precedence conflict: $($precedenceCheck.Reason)"
@@ -231,7 +237,7 @@ function Set-SshHostBlock {
         Write-Verbose "Insertion point: Line $($insertionIndex.InsertAtLine) ($($insertionIndex.Section))"
 
         # Generate new block text
-        $blockText = New-SshHostBlockText -Patterns $Patterns -Options $Options
+        $blockText = New-SshHostBlockText -Patterns $processedPatterns -Options $Options
 
         # Insert the host block
         if ($PSCmdlet.ShouldProcess("SSH config at line $($insertionIndex.InsertAtLine)", "Insert new host block")) {
@@ -246,7 +252,7 @@ function Set-SshHostBlock {
                     Type      = 'HostBlock'
                     RawText   = $blockText.TrimEnd("`r`n")
                     HostLine  = ($blockText -split "`r?`n")[0].Trim()
-                    Patterns  = $Patterns
+                    Patterns  = $processedPatterns
                     IsBastion = $IsBastion
                     # StartLine/EndLine are recalculated on save
                     StartLine = 1
@@ -287,7 +293,7 @@ function Set-SshHostBlock {
         
         return [PSCustomObject]@{
             Path      = $Path
-            Patterns  = $Patterns
+            Patterns  = $processedPatterns
             Action    = if ($existing) { 'Updated' } else { 'Inserted' }
             LineRange = if ($existing) { 
                 "$($existing.StartLine)-$($existing.EndLine)" 
