@@ -58,12 +58,43 @@ $config = Get-SshHostBlock -Patterns 'ac*', '!*.acme.com'
 
 ### Creating and Updating Host Blocks
 
+`Set-SshHostBlock` provides a powerful way to create or update host entries. You can pass SSH options as a hashtable, or use dedicated parameters for common settings like `HostName` and `JumpHost`.
+
+**Basic Example**
+
 ```powershell
 # Create or update a simple host entry
 Set-SshHostBlock -Patterns 'myserver' -Options @{
     HostName = '10.0.1.50'
     User     = 'admin'
 }
+```
+
+**Using Convenience Parameters**
+
+For clarity and convenience, you can use top-level parameters like `-HostName` and `-JumpHost`.
+
+-   `-HostName`: Sets the `HostName` option.
+-   `-JumpHost`: Sets the `ProxyCommand` to route traffic through the specified jump host.
+
+These parameters can be combined with the `-Options` hashtable. If a key is present in both, the top-level parameter takes precedence.
+
+```powershell
+# Create or update an entry that uses a jump host
+Set-SshHostBlock -Patterns 'internal-server' -HostName '10.10.10.5' -JumpHost 'bastion.example.com' -Options @{
+    User = 'dev'
+    Port = 2222
+}
+```
+
+This command creates the following SSH configuration:
+
+```ssh
+Host internal-server
+    HostName 10.10.10.5
+    ProxyCommand ssh bastion.example.com -W %h:%p
+    User dev
+    Port 2222
 ```
 
 ## Components

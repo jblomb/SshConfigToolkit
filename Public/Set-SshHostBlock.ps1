@@ -21,6 +21,17 @@
     A hashtable of SSH configuration options (e.g., @{HostName='10.0.1.50'; User='admin'}).
     For updates with -Merge, these options are merged with existing options.
 
+.PARAMETER HostName
+    A convenience parameter to specify the remote host's real IP address or DNS name.
+    This value is added to the 'HostName' option. If the 'HostName' key already
+    exists in the -Options hashtable, this parameter's value will take precedence.
+
+.PARAMETER JumpHost
+    A convenience parameter to configure a jump host for this connection. The value should be
+    an existing host in the SSH config. This sets the 'ProxyCommand' option to
+    'ssh <JumpHost> -W %h:%p'. If the 'ProxyCommand' key already exists in the
+    -Options hashtable, this parameter's value will take precedence.
+
 .PARAMETER IsBastion
     Indicates whether this host is a bastion/jump host. This affects where the host block 
     is inserted in the configuration file (bastions are placed before routing rules).
@@ -76,6 +87,12 @@
     Set-SshHostBlock -Patterns 'webserver' -Options @{Port = '2222'} -Merge
     
     Updates only the Port option, leaving other existing options unchanged.
+
+.EXAMPLE
+    Set-SshHostBlock -Patterns 'internal-app' -HostName '10.20.30.40' -JumpHost 'bastion' -Options @{ User = 'app_user' }
+    
+    Creates or updates the 'internal-app' host, setting its 'HostName' and configuring
+    it to connect through the 'bastion' host.
 
 .EXAMPLE
     Set-SshHostBlock -Path "C:\custom\ssh_config" -Patterns 'test' -Options @{
