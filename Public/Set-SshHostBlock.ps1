@@ -93,8 +93,12 @@ function Set-SshHostBlock {
         [Parameter(Mandatory)]
         [string[]]$Patterns,
 
-        [Parameter(Mandatory)]
-        [hashtable]$Options,
+        [Parameter(Mandatory=$false)]
+        [hashtable]$Options = @{},
+
+        [string]$HostName,
+
+        [string]$JumpHost,
 
         [switch]$IsBastion,
 
@@ -119,6 +123,15 @@ function Set-SshHostBlock {
     Write-Verbose "Patterns: $($Patterns -join ', ')"
     Write-Verbose "Operation: $(if ($Merge) {'Merge'} else {'Replace'})"
 
+    if ($JumpHost) {
+        Write-Verbose "Jump host: $JumpHost"
+        $Options['ProxyCommand'] = "ssh $JumpHost -W %h:%p"
+    }
+    If ($HostName) {
+        Write-Verbose "Host name: $HostName"
+        $Options['HostName'] = $HostName
+    }
+        
     # Ensure the SSH directory exists
     $sshDir = Split-Path -Path $Path -Parent
     if (-not (Test-Path -Path $sshDir)) {
