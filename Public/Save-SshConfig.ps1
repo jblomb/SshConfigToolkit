@@ -99,7 +99,8 @@ function Save-SshConfig {
                 New-Item -Path $BackupDirectory -ItemType Directory -Force | Out-Null
             }
             $backupPath = Join-Path $BackupDirectory "config.$timestamp.bak"
-        } else {
+        }
+        else {
             # Backup in same directory as original file
             $backupPath = "$Path.$timestamp.bak"
         }
@@ -109,7 +110,8 @@ function Save-SshConfig {
         try {
             Copy-Item -Path $Path -Destination $backupPath -Force
             Write-Verbose "Backup created successfully"
-        } catch {
+        }
+        catch {
             Write-Warning "Failed to create backup: $_"
             if (-not $Force) {
                 throw "Backup failed. Use -Force to proceed anyway."
@@ -150,25 +152,30 @@ function Save-SshConfig {
         if ($NoAtomic) {
             # Direct write (simpler but less safe)
             try {
-                [System.IO.File]::WriteAllText($Path, $finalText, [System.Text.Encoding]::UTF8)
+                $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+                [System.IO.File]::WriteAllText($Path, $finalText, $Utf8NoBom)
                 Write-Verbose "File written successfully (direct write)"
-            } catch {
+            }
+            catch {
                 throw "Failed to write SSH config: $_"
             }
-        } else {
+        }
+        else {
             # Atomic write using temporary file
             $tempPath = "$Path.tmp.$PID"
             
             try {
                 # Write to temp file
-                [System.IO.File]::WriteAllText($tempPath, $finalText, [System.Text.Encoding]::UTF8)
+                $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+                [System.IO.File]::WriteAllText($Path, $finalText, $Utf8NoBom)
                 Write-Verbose "Temporary file written: $tempPath"
 
                 # Atomic rename (overwrites target on Windows/Linux)
                 Move-Item -Path $tempPath -Destination $Path -Force
                 Write-Verbose "File written successfully (atomic rename)"
                 
-            } catch {
+            }
+            catch {
                 # Clean up temp file on error
                 if (Test-Path $tempPath) {
                     Remove-Item $tempPath -Force -ErrorAction SilentlyContinue
