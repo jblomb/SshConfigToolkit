@@ -291,7 +291,7 @@ function Get-SshConfigEntities {
                 $bastionName = $Matches[1]
             }
             # Check ProxyCommand (extract hostname from "ssh <bastion> ..." pattern)
-            elseif ($hostBlock.RawText -match '(?im)^\s+ProxyCommand\s+ssh\s+(\S+)') {
+            elseif ($hostBlock.RawText -match '(?im)^\s+ProxyCommand\s+ssh\s+(?:[^\s@]+@)?([^\s]+)') {
                 $bastionName = $Matches[1]
             }
             

@@ -30,10 +30,10 @@ Host jumpze
 # Short names only (avoid double-FQDN expansion)
 Host ac* !*.acme.com
     HostName %h.acme.com
-    ProxyCommand ssh jumpac -W %h:%p
+    ProxyCommand ssh Administrator@jumpac -W %h:%p
 # FQDNs and internal IP range
 Host *.acme.com 192.168.19.*
-    ProxyCommand ssh jumpac -W %h:%p
+    ProxyCommand ssh Administrator@jumpac -W %h:%p
 # --- FooBar Industries -------------------------------------------------------
 Host fo* !*.foobar.local
     HostName %h.foobar.local
