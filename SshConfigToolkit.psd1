@@ -1,7 +1,7 @@
 @{
     # Module identification
     RootModule        = 'SshConfigToolkit.psm1'
-    ModuleVersion     = '2.0.0'
+    ModuleVersion     = '2.1.0'
     GUID              = 'a3b5c7d9-e1f3-4a5b-8c7d-9e1f3a5b7c9d'
     Author            = 'Jan Blomberg'
     CompanyName       = 'Unknown'
@@ -35,6 +35,7 @@
         
         # Persistence
         'Save-SshConfig'
+        'Set-SshConfigPermissions'
         
         # Helpers (exported for advanced use)
         'ConvertFrom-SshGlobToRegex'
@@ -52,6 +53,9 @@
             LicenseUri   = ''
             ProjectUri   = ''
             ReleaseNotes = @'
+v2.1.0 (2026-03-18)
+- Added Set-SshConfigPermissions to apply known-good SDDL security descriptors to SSH config files.
+
 v2.0.0 (2026-01-05)
 - BREAKING CHANGE: Integrated host resolution logic directly into Get-SshHostBlock and Find-SshHostBlock.
 - Added -HostNameToResolve parameter to Get-SshHostBlock and Find-SshHostBlock to find the first applicable host block, mimicking ssh.exe behavior.

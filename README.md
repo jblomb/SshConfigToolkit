@@ -131,6 +131,7 @@ Host internal-server
 | `Insert-SshHostBlock` | Inserts a new host block at a specified position. |
 | `Update-SshHostBlock` | Updates the text of an existing host block. |
 | `Save-SshConfig` | Writes entities back to disk with backup support. |
+| `Set-SshConfigPermissions` | Applies a known-good SDDL security descriptor to SSH config files. |
 
 ## Entity Types
 
@@ -190,6 +191,9 @@ Save-SshConfig -Entities $entities -Path "~/.ssh/config"
 - No external dependencies
 
 ## Version History
+
+### v2.1.0 (2026-03-18)
+- Added `Set-SshConfigPermissions` to apply known-good SDDL security descriptors to SSH config files. Defaults to the system-wide OpenSSH config path with standard Windows permissions (Administrators/SYSTEM full control, Authenticated Users read). Supports custom SDDL via parameter.
 
 ### v2.0.0 (2026-01-05)
 - **BREAKING CHANGE**: Integrated host resolution logic directly into `Get-SshHostBlock` and `Find-SshHostBlock`.
