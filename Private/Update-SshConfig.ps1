@@ -7,8 +7,9 @@
     an elevated atomic replacement of the system-wide SSH configuration file.
     
     It expects a temp file at C:\ProgramData\ssh\backups\ssh_config.temp containing
-    the new configuration. The script copies the ACL from the original ssh_config,
-    applies it to the temp file, then performs an atomic replace (delete + rename).
+    the new configuration. The script captures the ACL from the original ssh_config,
+    performs an atomic replace (delete + rename), then restores the original ACL on
+    the new file at its final destination.
     
     This script should be placed in the module's Private folder and referenced
     by the scheduled task created by Set-SshScheduledCopyTask.ps1.
@@ -16,7 +17,7 @@
 .NOTES
     Author: Jan Blomberg
     Date: 2025-01-28
-    Version: 2.0
+    Version: 2.1
     
     This script runs as SYSTEM via scheduled task and should not be called directly.
     
@@ -45,15 +46,15 @@ if (-not (Test-Path $SshConfigPath)) {
 }
 
 try {
-    # Get ACL from original
+    # Get ACL from original before replacing
     $acl = Get-Acl $SshConfigPath
-    
-    # Apply ACL to temp file before moving
-    Set-Acl $TempPath $acl
     
     # Atomic replace: delete original, rename temp
     Remove-Item $SshConfigPath -Force
     Move-Item $TempPath $SshConfigPath -Force
+    
+    # Restore original ACL after file is at final destination
+    Set-Acl $SshConfigPath $acl
     
     Write-Output "Successfully updated $SshConfigPath"
     exit 0

@@ -192,6 +192,9 @@ Save-SshConfig -Entities $entities -Path "~/.ssh/config"
 
 ## Version History
 
+### v2.1.1 (2026-03-18)
+- Fixed ACL preservation in `Save-SshConfig` and `Update-SshConfig`: original file permissions are now restored after the file is at its final destination, instead of being applied to the temp file before the move. This prevents permission drift caused by inconsistent `Move-Item` ACL behavior.
+
 ### v2.1.0 (2026-03-18)
 - Added `Set-SshConfigPermissions` to apply known-good SDDL security descriptors to SSH config files. Defaults to the system-wide OpenSSH config path with standard Windows permissions (Administrators/SYSTEM full control, Authenticated Users read). Supports custom SDDL via parameter.
 

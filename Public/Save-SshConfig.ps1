@@ -54,6 +54,8 @@
     Version: 2.0
     
     Version History:
+    2.1 - Fixed ACL preservation: now restores original ACL after file is at final destination
+          instead of before move, preventing permission drift from Move-Item behavior
     2.0 - Uses backups folder for staging temp files and backups
     1.2 - Added UseTask parameter for elevated writes via scheduled task
     1.1 - Added UTF-8 encoding documentation
@@ -175,9 +177,9 @@ function Save-SshConfig {
         }
     }
 
-    # Capture original ACL to preserve permissions (only needed for non-task atomic writes)
+    # Capture original ACL to restore after write (applied after file is at final destination)
     $originalAcl = $null
-    if ($fileExists -and -not $UseTask -and -not $NoAtomic) {
+    if ($fileExists) {
         $originalAcl = Get-Acl -Path $Path
     }
 
@@ -273,6 +275,12 @@ function Save-SshConfig {
             # Direct write (less safe, but simpler)
             try {
                 [System.IO.File]::WriteAllText($Path, $finalText, $Utf8NoBom)
+
+                # Restore original ACL after write
+                if ($null -ne $originalAcl) {
+                    Set-Acl -Path $Path -AclObject $originalAcl
+                }
+
                 Write-Verbose "Wrote directly to: $Path"
             }
             catch {
@@ -285,13 +293,14 @@ function Save-SshConfig {
             
             try {
                 [System.IO.File]::WriteAllText($tempPath, $finalText, $Utf8NoBom)
-                
-                # Apply original ACL to temp file before swapping
-                if ($null -ne $originalAcl) {
-                    Set-Acl -Path $tempPath -AclObject $originalAcl
-                }
 
                 Move-Item -Path $tempPath -Destination $Path -Force
+
+                # Restore original ACL after file is at final destination
+                if ($null -ne $originalAcl) {
+                    Set-Acl -Path $Path -AclObject $originalAcl
+                }
+
                 Write-Verbose "Atomic write completed: $Path"
             }
             catch {

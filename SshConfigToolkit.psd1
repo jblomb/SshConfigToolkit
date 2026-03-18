@@ -1,7 +1,7 @@
 @{
     # Module identification
     RootModule        = 'SshConfigToolkit.psm1'
-    ModuleVersion     = '2.1.0'
+    ModuleVersion     = '2.1.1'
     GUID              = 'a3b5c7d9-e1f3-4a5b-8c7d-9e1f3a5b7c9d'
     Author            = 'Jan Blomberg'
     CompanyName       = 'Unknown'
@@ -53,6 +53,11 @@
             LicenseUri   = ''
             ProjectUri   = ''
             ReleaseNotes = @'
+v2.1.1 (2026-03-18)
+- Fixed ACL preservation in Save-SshConfig and Update-SshConfig: original file permissions are now
+  restored after the file is at its final destination, instead of being applied to the temp file
+  before the move. This prevents permission drift caused by inconsistent Move-Item ACL behavior.
+
 v2.1.0 (2026-03-18)
 - Added Set-SshConfigPermissions to apply known-good SDDL security descriptors to SSH config files.
 
