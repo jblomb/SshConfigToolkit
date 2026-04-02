@@ -66,21 +66,21 @@ function Get-SshHostBlock {
     # Parse entities if not provided
     if (-not $Entities) {
         if (-not (Test-Path -Path $Path)) {
-            Write-Verbose "SSH config file not found: $Path"
+            Write-Debug "SSH config file not found: $Path"
             return $null
         }
 
-        Write-Verbose "Parsing SSH config from: $Path"
+        Write-Debug "Parsing SSH config from: $Path"
         $Entities = Get-SshConfigEntities -Path $Path
     }
 
     # Find the host block using the appropriate parameter set
     $findParams = @{ Entities = $Entities }
     if ($PSCmdlet.ParameterSetName -eq 'ResolveByHostName') {
-        Write-Verbose "Resolving hostname: $HostNameToResolve"
+        Write-Debug "Resolving hostname: $HostNameToResolve"
         $findParams.HostNameToResolve = $HostNameToResolve
     } else {
-        Write-Verbose "Searching for exact patterns: $($Patterns -join ', ')"
+        Write-Debug "Searching for exact patterns: $($Patterns -join ', ')"
         $findParams.Patterns = $Patterns
     }
     $hostBlock = Find-SshHostBlock @findParams

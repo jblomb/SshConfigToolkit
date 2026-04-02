@@ -81,20 +81,20 @@ function Get-SshConfigEntities {
         $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
     }
 
-    Write-Verbose "SSH config path: $Path"
+    Write-Debug "SSH config path: $Path"
 
     # Validate that the SSH config file exists before attempting to parse
     if (-not (Test-Path $Path)) {
         throw "SSH config file not found: $Path"
     }
 
-    Write-Verbose "Reading SSH config from: $Path"
+    Write-Verbose "Parsing SSH config: $Path"
 
     # Read entire file content and split into individual lines for parsing
     $content = Get-Content -Path $Path -Raw
     $lines   = $content -split "`r?`n"
 
-    Write-Verbose ("Total lines read: {0}" -f $lines.Count)
+    Write-Debug ("Total lines read: {0}" -f $lines.Count)
 
     # Initialize mutable collection to store parsed entities
     # IMPORTANT: mutable collection for efficient appending
@@ -117,7 +117,7 @@ function Get-SshConfigEntities {
             return
         }
 
-        Write-Verbose ("Flushing entity [{0}] lines {1}..{2}" -f $Type, $Start, $End)
+        Write-Debug ("Flushing entity [{0}] lines {1}..{2}" -f $Type, $Start, $End)
 
         $rawText = ($Lines -join "`n")
 
@@ -197,7 +197,7 @@ function Get-SshConfigEntities {
         $isHost    = $line -match '^\s*Host\s+'
         $isMatch   = $line -match '^\s*Match\s+'
 
-        Write-Verbose ("Line {0}: [{1}]" -f $i, $line)
+        Write-Debug ("Line {0}: [{1}]" -f $i, $line)
 
         # Process Host directive: flush previous entity and capture entire host block
         if ($isHost) {
@@ -275,7 +275,7 @@ function Get-SshConfigEntities {
     # Flush final buffered entity after completing line iteration
     Flush-Entity $currentType $startLine ($lines.Count - 1) $buffer
 
-    Write-Verbose ("Parsing complete. Entities created: {0}" -f $entities.Count)
+    Write-Debug ("Parsing complete. Entities created: {0}" -f $entities.Count)
 
     # Post-processing to identify bastions and their dependents
     $hostBlocks = $entities.Where({ $_.Type -eq 'HostBlock' })
@@ -320,6 +320,10 @@ function Get-SshConfigEntities {
             $hostBlock | Add-Member -NotePropertyName DependentHosts -NotePropertyValue ([string[]]@($dependentHosts | Select-Object -Unique))
         }
     }
+
+    $hostBlockCount = $hostBlocks.Count
+    $bastionCount = ($hostBlocks | Where-Object { $_.IsBastion }).Count
+    Write-Verbose "Parsed $($entities.Count) entities ($hostBlockCount host blocks, $bastionCount bastions)"
 
     # Filter entities based on the -Type parameter
     if ($Type -eq 'All') {

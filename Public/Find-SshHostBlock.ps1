@@ -45,6 +45,8 @@ function Find-SshHostBlock {
 
     if ($PSCmdlet.ParameterSetName -eq 'ResolveByHostName') {
         # MODE 2: Resolve hostname against all host blocks
+        Write-Debug "Resolving hostname '$HostNameToResolve' against host blocks"
+
         foreach ($entity in $Entities) {
             if ($entity.Type -ne 'HostBlock') {
                 continue
@@ -63,7 +65,8 @@ function Find-SshHostBlock {
             }
 
             if ($isNegativeMatch) {
-                continue # A negative pattern matched, so this block is disqualified.
+                Write-Debug "Skipping '$($entity.HostLine)' - excluded by negation pattern"
+                continue
             }
 
             $isPositiveMatch = $false
@@ -85,6 +88,8 @@ function Find-SshHostBlock {
 
     } else {
         # MODE 1: Find by exact pattern definition (original logic)
+        Write-Debug "Finding host block by exact patterns: $($Patterns -join ', ')"
+
         $wanted = @($Patterns | Sort-Object -CaseSensitive)
         $matches = New-Object System.Collections.Generic.List[object]
 

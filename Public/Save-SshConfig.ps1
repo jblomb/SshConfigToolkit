@@ -141,7 +141,7 @@ function Save-SshConfig {
             }
         }
         else {
-            Write-Verbose "Scheduled task only applies to $SystemConfigPath. Using direct write for: $Path"
+            Write-Debug "Scheduled task only applies to $SystemConfigPath. Using direct write for: $Path"
         }
     }
 
@@ -228,11 +228,11 @@ function Save-SshConfig {
             
             try {
                 [System.IO.File]::WriteAllText($tempPath, $finalText, $Utf8NoBom)
-                Write-Verbose "Wrote temp file: $tempPath"
+                Write-Debug "Wrote temp file: $tempPath"
                 
                 # Start the task and wait for completion
                 Start-ScheduledTask -TaskName $TaskName
-                Write-Verbose "Started scheduled task: $TaskName"
+                Write-Debug "Started scheduled task: $TaskName"
                 
                 # Wait for task to complete
                 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -261,7 +261,7 @@ function Save-SshConfig {
                     throw "Scheduled task failed with exit code: $($taskInfo.LastTaskResult)"
                 }
                 
-                Write-Verbose "SSH config updated successfully via scheduled task."
+                Write-Verbose "Saved $Path (via scheduled task)"
             }
             catch {
                 # Cleanup temp file on failure
@@ -281,7 +281,7 @@ function Save-SshConfig {
                     Set-Acl -Path $Path -AclObject $originalAcl
                 }
 
-                Write-Verbose "Wrote directly to: $Path"
+                Write-Verbose "Saved $Path (direct write)"
             }
             catch {
                 throw "Failed to write: $_"
@@ -301,7 +301,7 @@ function Save-SshConfig {
                     Set-Acl -Path $Path -AclObject $originalAcl
                 }
 
-                Write-Verbose "Atomic write completed: $Path"
+                Write-Verbose "Saved $Path (atomic write)"
             }
             catch {
                 if (Test-Path $tempPath) {

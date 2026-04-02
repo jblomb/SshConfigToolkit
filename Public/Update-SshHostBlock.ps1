@@ -59,8 +59,8 @@ function Update-SshHostBlock {
         [string]$BlockText
     )
 
-    Write-Verbose "Updating host block: $($HostBlock.HostLine)"
-    Write-Verbose "Original lines: $($HostBlock.StartLine)-$($HostBlock.EndLine)"
+    Write-Debug "Updating host block: $($HostBlock.HostLine)"
+    Write-Debug "Original lines: $($HostBlock.StartLine)-$($HostBlock.EndLine)"
 
     # Validate that the HostBlock is actually in the entities collection
     $found = $false
@@ -99,8 +99,8 @@ function Update-SshHostBlock {
     # EndLine might change if the new block has different line count
     $HostBlock.EndLine   = $HostBlock.StartLine + $lines.Count - 1
 
-    Write-Verbose "Updated host block to: $($HostBlock.HostLine)"
-    Write-Verbose "New patterns: $($patterns -join ', ')"
+    Write-Debug "Updated host block to: $($HostBlock.HostLine)"
+    Write-Debug "New patterns: $($patterns -join ', ')"
 
     return $Entities
 }

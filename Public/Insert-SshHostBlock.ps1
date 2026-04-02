@@ -61,8 +61,8 @@ function Insert-SshHostBlock {
         [switch]$NoBlankLineAfter
     )
 
-    Write-Verbose "Inserting host block at line $($InsertionIndex.InsertAtLine)"
-    Write-Verbose "Section: $($InsertionIndex.Section)"
+    Write-Debug "Inserting host block at line $($InsertionIndex.InsertAtLine)"
+    Write-Debug "Section: $($InsertionIndex.Section)"
 
     # Parse the block text to create a proper HostBlock entity
     $lines = $BlockText -split "`r?`n"
@@ -133,8 +133,7 @@ function Insert-SshHostBlock {
     # Insert all entities at the calculated position
     $Entities.InsertRange($insertPosition, $toInsert)
 
-    Write-Verbose "Inserted $($toInsert.Count) entities (including spacing)"
-    Write-Verbose "New total entity count: $($Entities.Count)"
+    Write-Debug "Inserted $($toInsert.Count) entities (including spacing) at position $insertPosition"
 
     return $Entities
 }
