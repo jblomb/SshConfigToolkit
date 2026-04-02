@@ -1,62 +1,68 @@
 @{
-    # Module identification
-    RootModule        = 'SshConfigToolkit.psm1'
-    ModuleVersion     = '2.1.1'
-    GUID              = 'a3b5c7d9-e1f3-4a5b-8c7d-9e1f3a5b7c9d'
-    Author            = 'Jan Blomberg'
-    CompanyName       = 'Unknown'
-    Copyright         = '(c) 2026 Jan Blomberg. All rights reserved.'
-    Description       = 'A comprehensive PowerShell toolkit for programmatically managing SSH configuration files in automation scenarios. Supports parsing, creating, updating, and removing host blocks with safety features like backups, atomic writes, and precedence checking.'
+  # Module identification
+  RootModule        = 'SshConfigToolkit.psm1'
+  ModuleVersion     = '2.2.0'
+  GUID              = 'a3b5c7d9-e1f3-4a5b-8c7d-9e1f3a5b7c9d'
+  Author            = 'Jan Blomberg'
+  CompanyName       = 'Unknown'
+  Copyright         = '(c) 2026 Jan Blomberg. All rights reserved.'
+  Description       = 'A comprehensive PowerShell toolkit for programmatically managing SSH configuration files in automation scenarios. Supports parsing, creating, updating, and removing host blocks with safety features like backups, atomic writes, and precedence checking.'
 
-    # Minimum PowerShell version
-    PowerShellVersion = '5.1'
+  # Minimum PowerShell version
+  PowerShellVersion = '5.1'
 
-    # Functions to export
-    FunctionsToExport = @(
-        # Core parsing & analysis
-        'Get-SshConfigEntities'
-        'Find-SshHostBlock'
-        'Get-SshHostBlock'
-        'Test-SshHostPrecedence'
-        
-        # Generation & positioning
-        'New-SshHostBlockText'
-        'Get-SshInsertionIndex'
-        'ConvertFrom-SshHostBlockText'
-        
-        # Mutation
-        'Insert-SshHostBlock'
-        'Update-SshHostBlock'
-        
-        # High-level operations
-        'Set-SshHostBlock'
-        'Remove-SshHostBlock'
-        'Rename-SshHostBlock'
-        
-        # Persistence
-        'Save-SshConfig'
-        'Set-SshConfigPermissions'
-        
-        # Helpers (exported for advanced use)
-        'ConvertFrom-SshGlobToRegex'
-    )
+  # Functions to export
+  FunctionsToExport = @(
+      # Core parsing & analysis
+      'Get-SshConfigEntities'
+      'Find-SshHostBlock'
+      'Get-SshHostBlock'
+      'Test-SshHostPrecedence'
+      
+      # Generation & positioning
+      'New-SshHostBlockText'
+      'Get-SshInsertionIndex'
+      'ConvertFrom-SshHostBlockText'
+      
+      # Mutation
+      'Insert-SshHostBlock'
+      'Update-SshHostBlock'
+      
+      # High-level operations
+      'Set-SshHostBlock'
+      'Remove-SshHostBlock'
+      'Rename-SshHostBlock'
+      
+      # Persistence
+      'Save-SshConfig'
+      'Set-SshConfigPermissions'
+      
+      # Helpers (exported for advanced use)
+      'ConvertFrom-SshGlobToRegex'
+  )
 
-    # Cmdlets, variables, aliases to export
-    CmdletsToExport   = @()
-    VariablesToExport = @()
-    AliasesToExport   = @()
+  # Cmdlets, variables, aliases to export
+  CmdletsToExport   = @()
+  VariablesToExport = @()
+  AliasesToExport   = @()
 
-    # Private data
-    PrivateData       = @{
-        PSData = @{
-            Tags         = @('SSH', 'Config', 'Automation', 'DevOps', 'Infrastructure')
-            LicenseUri   = ''
-            ProjectUri   = ''
-            ReleaseNotes = @'
+  # Private data
+  PrivateData       = @{
+      PSData = @{
+          Tags         = @('SSH', 'Config', 'Automation', 'DevOps', 'Infrastructure')
+          LicenseUri   = ''
+          ProjectUri   = ''
+          ReleaseNotes = @'
+v2.2.0 (2026-04-01)
+- Added -Entities and -PassThru parameters to Set-SshHostBlock, Remove-SshHostBlock, and
+Rename-SshHostBlock for batch operations. Multiple host blocks can now be created, updated,
+removed, and renamed in memory before a single Save-SshConfig call, reducing file I/O and
+producing only one backup per batch.
+
 v2.1.1 (2026-03-18)
 - Fixed ACL preservation in Save-SshConfig and Update-SshConfig: original file permissions are now
-  restored after the file is at its final destination, instead of being applied to the temp file
-  before the move. This prevents permission drift caused by inconsistent Move-Item ACL behavior.
+restored after the file is at its final destination, instead of being applied to the temp file
+before the move. This prevents permission drift caused by inconsistent Move-Item ACL behavior.
 
 v2.1.0 (2026-03-18)
 - Added Set-SshConfigPermissions to apply known-good SDDL security descriptors to SSH config files.
@@ -86,6 +92,6 @@ v1.1.0 (2025-12-23)
 v1.0.0 (2025-12-23)
 - Initial release with complete CRUD operations
 '@
-        }
-    }
+      }
+  }
 }

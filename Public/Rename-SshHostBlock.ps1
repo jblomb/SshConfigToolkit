@@ -8,14 +8,28 @@
     for renaming hosts (e.g., 'myserver' to 'myserver-prod') while keeping all 
     other settings intact.
 
+    For batch operations, use -Entities to pass a pre-parsed entity collection (skipping
+    the file read) and -PassThru to return the modified entities instead of saving. This
+    allows renames to be composed with other operations before a single Save-SshConfig call.
+
 .PARAMETER Path
     The full path to the SSH configuration file. Defaults to the user's SSH config.
+    Required when saving (i.e., when -PassThru is not specified and -Entities is provided).
 
 .PARAMETER OldPatterns
     The current host patterns that identify the block to rename. Must match exactly.
 
 .PARAMETER NewPatterns
     The new host patterns to replace the old ones.
+
+.PARAMETER Entities
+    Optional. A pre-parsed collection of SSH config entities (typically from Get-SshConfigEntities).
+    When provided, the function skips reading and parsing the config file from disk. The collection
+    is mutated in place and either saved or returned depending on -PassThru.
+
+.PARAMETER PassThru
+    When specified, returns the modified entities collection instead of saving to disk. This
+    allows multiple operations to be chained before a single Save-SshConfig call.
 
 .PARAMETER NoBackup
     Skips creating a timestamped backup before making changes.
@@ -29,7 +43,11 @@
 .NOTES
     Author: Jan Blomberg
     Date: 2025-12-23
-    Version: 1.0
+    Version: 1.1
+    
+    Version History:
+    1.1 - Added -Entities and -PassThru parameters for batch operations
+    1.0 - Initial release
     
     Requires: Get-SshConfigEntities, Find-SshHostBlock, ConvertFrom-SshHostBlockText,
               New-SshHostBlockText, Update-SshHostBlock, Save-SshConfig
@@ -58,6 +76,16 @@
     }
     
     Manually check precedence before renaming to a glob pattern.
+
+.EXAMPLE
+    # Batch operation: rename multiple hosts in one save
+    $path = "$env:USERPROFILE\.ssh\config"
+    $entities = Get-SshConfigEntities -Path $path
+    $entities = Rename-SshHostBlock -Entities $entities -OldPatterns 'web01' -NewPatterns 'web01-prod' -PassThru
+    $entities = Rename-SshHostBlock -Entities $entities -OldPatterns 'db01' -NewPatterns 'db01-prod' -PassThru
+    Save-SshConfig -Entities $entities -Path $path
+    
+    Performs two renames on the in-memory entity collection, then saves once.
 #>
 function Rename-SshHostBlock {
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact='Medium')]
@@ -71,11 +99,19 @@ function Rename-SshHostBlock {
         [Parameter(Mandatory)]
         [string[]]$NewPatterns,
 
+        [Parameter()]
+        [System.Collections.Generic.List[object]]$Entities,
+
+        [switch]$PassThru,
+
         [switch]$NoBackup
     )
 
-    # Determine default SSH config path if not specified
-    if (-not $Path) {
+    # Validate parameter combinations
+    $hasEntities = $PSBoundParameters.ContainsKey('Entities')
+
+    if (-not $hasEntities -and -not $Path) {
+        # No entities and no path: resolve default path (original behavior)
         if ($IsWindows -or $env:OS -match 'Windows') {
             $Path = Join-Path $env:USERPROFILE '.ssh\config'
         } else {
@@ -83,33 +119,40 @@ function Rename-SshHostBlock {
         }
         $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
     }
-
-    Write-Verbose "SSH config path: $Path"
-    Write-Verbose "Old patterns: $($OldPatterns -join ', ')"
-    Write-Verbose "New patterns: $($NewPatterns -join ', ')"
-
-    # Verify file exists
-    if (-not (Test-Path -Path $Path)) {
-        throw "SSH config file not found: $Path"
+    elseif ($hasEntities -and -not $PassThru -and -not $Path) {
+        throw "The -Path parameter is required when using -Entities without -PassThru, because the modified entities need a destination to save to."
+    }
+    elseif ($Path) {
+        $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
     }
 
-    # Parse the existing configuration
-    Write-Verbose "Parsing SSH configuration..."
-    $entities = Get-SshConfigEntities -Path $Path
+    Write-Debug "SSH config path: $(if ($Path) { $Path } else { '(in-memory only)' })"
+    Write-Debug "Old patterns: $($OldPatterns -join ', ')"
+    Write-Debug "New patterns: $($NewPatterns -join ', ')"
+
+    # When not using pre-parsed entities, read from disk
+    if (-not $hasEntities) {
+        if (-not (Test-Path -Path $Path)) {
+            throw "SSH config file not found: $Path"
+        }
+
+        # Parse the existing configuration
+        $Entities = Get-SshConfigEntities -Path $Path
+    }
 
     # Convert to mutable list if needed
-    if ($entities -isnot [System.Collections.Generic.List[object]]) {
-        $entities = [System.Collections.Generic.List[object]]::new($entities)
+    if ($Entities -isnot [System.Collections.Generic.List[object]]) {
+        $Entities = [System.Collections.Generic.List[object]]::new($Entities)
     }
 
     # Find the host block to rename
-    $existing = Find-SshHostBlock -Entities $entities -Patterns $OldPatterns
+    $existing = Find-SshHostBlock -Entities $Entities -Patterns $OldPatterns
 
     if (-not $existing) {
         throw "Host block not found with patterns: $($OldPatterns -join ', ')"
     }
 
-    Write-Verbose "Found host block at lines $($existing.StartLine)-$($existing.EndLine)"
+    Write-Debug "Found host block at lines $($existing.StartLine)-$($existing.EndLine)"
 
     # Parse existing options
     $options = ConvertFrom-SshHostBlockText -RawText $existing.RawText
@@ -121,17 +164,22 @@ function Rename-SshHostBlock {
     $renameMessage = "'$($OldPatterns -join ' ')' -> '$($NewPatterns -join ' ')'"
 
     if (-not $PSCmdlet.ShouldProcess($renameMessage, "Rename host block")) {
+        if ($PassThru) { return $Entities }
         return
     }
 
     # Update the host block with new patterns
-    $entities = Update-SshHostBlock -Entities $entities -HostBlock $existing -BlockText $newBlockText
+    $Entities = Update-SshHostBlock -Entities $Entities -HostBlock $existing -BlockText $newBlockText
 
-    Write-Verbose "Host block patterns updated"
+    # If PassThru, return entities without saving
+    if ($PassThru) {
+        Write-Debug "PassThru: returning modified entities without saving"
+        return $Entities
+    }
 
     # Save the modified configuration
     $saveParams = @{
-        Entities = $entities
+        Entities = $Entities
         Path     = $Path
     }
     if ($NoBackup) {
@@ -140,8 +188,7 @@ function Rename-SshHostBlock {
 
     Save-SshConfig @saveParams
 
-    # Return summary information
-    Write-Verbose "Configuration saved successfully"
+    Write-Verbose "Renamed '$($OldPatterns -join ' ')' -> '$($NewPatterns -join ' ')'"
 
     return [PSCustomObject]@{
         Path        = $Path

@@ -9,9 +9,14 @@
     update an existing host block or insert a new one, and includes safety features like 
     precedence checking, backups, and atomic writes.
 
+    For batch operations, use -Entities to pass a pre-parsed entity collection (skipping
+    the file read) and -PassThru to return the modified entities instead of saving. This
+    allows multiple mutations to be composed before a single Save-SshConfig call.
+
 .PARAMETER Path
     The full path to the SSH configuration file. Defaults to "$env:USERPROFILE\.ssh\config" 
-    on Windows or "~/.ssh/config" on Unix systems.
+    on Windows or "~/.ssh/config" on Unix systems. Required when saving (i.e., when -PassThru
+    is not specified and -Entities is provided).
 
 .PARAMETER Patterns
     An array of host patterns for the Host directive (e.g., 'myserver', 'myserver.local').
@@ -31,6 +36,16 @@
     an existing host in the SSH config. This sets the 'ProxyCommand' option to
     'ssh <JumpHost> -W %h:%p'. If the 'ProxyCommand' key already exists in the
     -Options hashtable, this parameter's value will take precedence.
+
+.PARAMETER Entities
+    Optional. A pre-parsed collection of SSH config entities (typically from Get-SshConfigEntities).
+    When provided, the function skips reading and parsing the config file from disk. The collection
+    is mutated in place and either saved or returned depending on -PassThru.
+
+.PARAMETER PassThru
+    When specified, returns the modified entities collection instead of saving to disk. This
+    allows multiple Set-SshHostBlock calls to be chained before a single Save-SshConfig call,
+    reducing file I/O and creating only one backup for a batch of changes.
 
 .PARAMETER IsBastion
     Indicates whether this host is a bastion/jump host. This affects where the host block 
@@ -56,9 +71,10 @@
 .NOTES
     Author: Jan Blomberg
     Date: 2025-12-23
-    Version: 1.1
+    Version: 1.2
     
     Version History:
+    1.2 - Added -Entities and -PassThru parameters for batch operations
     1.1 - Refactored to use ConvertFrom-SshHostBlockText helper
     1.0 - Initial release
     
@@ -100,6 +116,17 @@
     } -WhatIf
     
     Shows what would be changed without actually modifying the file.
+
+.EXAMPLE
+    # Batch operation: add an entire environment in one save
+    $path = "$env:USERPROFILE\.ssh\config"
+    $entities = Get-SshConfigEntities -Path $path
+    $entities = Set-SshHostBlock -Entities $entities -Patterns 'jumpex' -HostName 'jump.example.com' -IsBastion -PassThru
+    $entities = Set-SshHostBlock -Entities $entities -Patterns 'exserver' -HostName '%h.example.com' -JumpHost 'jumpex' -PassThru
+    $entities = Set-SshHostBlock -Entities $entities -Patterns 'exserver.example.com' -HostName '%h' -JumpHost 'jumpex' -PassThru
+    Save-SshConfig -Entities $entities -Path $path
+    
+    Performs three mutations on the in-memory entity collection, then saves once.
 #>
 function Set-SshHostBlock {
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact='Medium')]
@@ -117,6 +144,11 @@ function Set-SshHostBlock {
 
         [string]$JumpHost,
 
+        [Parameter()]
+        [System.Collections.Generic.List[object]]$Entities,
+
+        [switch]$PassThru,
+
         [switch]$IsBastion,
 
         [switch]$Merge,
@@ -132,8 +164,11 @@ function Set-SshHostBlock {
         $processedPatterns += $pattern.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
     }
 
-    # Determine default SSH config path if not specified
-    if (-not $Path) {
+    # Validate parameter combinations
+    $hasEntities = $PSBoundParameters.ContainsKey('Entities')
+
+    if (-not $hasEntities -and -not $Path) {
+        # No entities and no path: resolve default path (original behavior)
         if ($IsWindows -or $env:OS -match 'Windows') {
             $Path = Join-Path $env:USERPROFILE '.ssh\config'
         } else {
@@ -141,52 +176,61 @@ function Set-SshHostBlock {
         }
         $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
     }
+    elseif ($hasEntities -and -not $PassThru -and -not $Path) {
+        # Entities provided without PassThru requires a Path for saving
+        throw "The -Path parameter is required when using -Entities without -PassThru, because the modified entities need a destination to save to."
+    }
+    elseif ($Path) {
+        $Path = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    }
 
-    Write-Verbose "SSH config path: $Path"
-    Write-Verbose "Patterns: $($processedPatterns -join ', ')"
-    Write-Verbose "Operation: $(if ($Merge) {'Merge'} else {'Replace'})"
+    Write-Debug "SSH config path: $(if ($Path) { $Path } else { '(in-memory only)' })"
+    Write-Debug "Patterns: $($processedPatterns -join ', ')"
+    Write-Debug "Operation: $(if ($Merge) {'Merge'} else {'Replace'})$(if ($PassThru) {' (PassThru)'} else {''})"
 
     if ($JumpHost) {
-        Write-Verbose "Jump host: $JumpHost"
+        Write-Debug "Jump host: $JumpHost"
         $Options['ProxyCommand'] = "ssh $JumpHost -W %h:%p"
     }
     If ($HostName) {
-        Write-Verbose "Host name: $HostName"
+        Write-Debug "Host name: $HostName"
         $Options['HostName'] = $HostName
     }
-        
-    # Ensure the SSH directory exists
-    $sshDir = Split-Path -Path $Path -Parent
-    if (-not (Test-Path -Path $sshDir)) {
-        Write-Verbose "Creating SSH directory: $sshDir"
-        New-Item -Path $sshDir -ItemType Directory -Force | Out-Null
-    }
 
-    # Create empty config file if it doesn't exist
-    if (-not (Test-Path -Path $Path)) {
-        Write-Verbose "Creating new SSH config file: $Path"
-        Set-Content -Path $Path -Value '' -NoNewline
-    }
+    # When not using pre-parsed entities, handle file creation and parsing
+    if (-not $hasEntities) {
+        # Ensure the SSH directory exists
+        $sshDir = Split-Path -Path $Path -Parent
+        if (-not (Test-Path -Path $sshDir)) {
+            Write-Debug "Creating SSH directory: $sshDir"
+            New-Item -Path $sshDir -ItemType Directory -Force | Out-Null
+        }
 
-    # Parse the existing configuration
-    Write-Verbose "Parsing SSH configuration..."
-    $entities = Get-SshConfigEntities -Path $Path
+        # Create empty config file if it doesn't exist
+        if (-not (Test-Path -Path $Path)) {
+            Write-Debug "Creating new SSH config file: $Path"
+            Set-Content -Path $Path -Value '' -NoNewline
+        }
+
+        # Parse the existing configuration
+        $Entities = Get-SshConfigEntities -Path $Path
+    }
 
     # Convert to mutable list if needed
-    if ($entities -isnot [System.Collections.Generic.List[object]]) {
-        # By wrapping $entities with @(), we ensure that if it's $null (from an
+    if ($Entities -isnot [System.Collections.Generic.List[object]]) {
+        # By wrapping $Entities with @(), we ensure that if it's $null (from an
         # empty file), it becomes an empty array, preventing the constructor error.
-        $entities = [System.Collections.Generic.List[object]]::new(@($entities))
+        $Entities = [System.Collections.Generic.List[object]]::new(@($Entities))
     }
 
     # Check if host block already exists
-    $existing = Find-SshHostBlock -Entities $entities -Patterns $processedPatterns
+    $existing = Find-SshHostBlock -Entities $Entities -Patterns $processedPatterns
 
     if ($existing) {
-        Write-Verbose "Found existing host block at lines $($existing.StartLine)-$($existing.EndLine)"
+        Write-Debug "Found existing host block at lines $($existing.StartLine)-$($existing.EndLine)"
         
         if ($Merge) {
-            Write-Verbose "Merging options with existing configuration"
+            Write-Debug "Merging options with existing configuration"
             
             # Use the helper function to parse existing options
             $existingOptions = ConvertFrom-SshHostBlockText -RawText $existing.RawText
@@ -198,7 +242,6 @@ function Set-SshHostBlock {
             
             $finalOptions = $existingOptions
         } else {
-            Write-Verbose "Replacing existing configuration"
             $finalOptions = $Options
         }
 
@@ -207,34 +250,33 @@ function Set-SshHostBlock {
 
         # Update the host block
         if ($PSCmdlet.ShouldProcess("Host block '$($processedPatterns -join ' ')'", "Update")) {
-            $entities = Update-SshHostBlock -Entities $entities -HostBlock $existing -BlockText $blockText
-            Write-Verbose "Host block updated"
+            $Entities = Update-SshHostBlock -Entities $Entities -HostBlock $existing -BlockText $blockText
         }
 
     } else {
-        Write-Verbose "Host block does not exist, will insert new entry"
+        Write-Debug "Host block does not exist, will insert new entry"
 
         # Check precedence if requested
         if ($CheckPrecedence) {
-            Write-Verbose "Checking precedence rules..."
-            $precedenceCheck = Test-SshHostPrecedence -Entities $entities -NewPatterns $processedPatterns
+            Write-Debug "Checking precedence rules..."
+            $precedenceCheck = Test-SshHostPrecedence -Entities $Entities -NewPatterns $processedPatterns
             
             if (-not $precedenceCheck.Safe) {
                 throw "Precedence conflict: $($precedenceCheck.Reason)"
             }
-            Write-Verbose "Precedence check passed"
+            Write-Debug "Precedence check passed"
         }
 
         # Determine insertion point
         $insertionParams = @{
-            Entities = $entities
+            Entities = $Entities
         }
         if ($IsBastion) {
             $insertionParams['IsBastion'] = $true
         }
         
         $insertionIndex = Get-SshInsertionIndex @insertionParams
-        Write-Verbose "Insertion point: Line $($insertionIndex.InsertAtLine) ($($insertionIndex.Section))"
+        Write-Debug "Insertion point: Line $($insertionIndex.InsertAtLine) ($($insertionIndex.Section))"
 
         # Generate new block text
         $blockText = New-SshHostBlockText -Patterns $processedPatterns -Options $Options
@@ -243,8 +285,8 @@ function Set-SshHostBlock {
         if ($PSCmdlet.ShouldProcess("SSH config at line $($insertionIndex.InsertAtLine)", "Insert new host block")) {
             # WORKAROUND: Insert-SshHostBlock fails parameter binding on an empty collection.
             # If the entities list is empty (new file), manually construct and add the entities.
-            if ($entities.Count -eq 0) {
-                Write-Verbose "Applying workaround for empty entity list"
+            if ($Entities.Count -eq 0) {
+                Write-Debug "Applying workaround for empty entity list"
                 
                 # Manually create the entities that Insert-SshHostBlock would have.
                 # This logic is partially duplicated from Insert-SshHostBlock.
@@ -265,20 +307,25 @@ function Set-SshHostBlock {
                     EndLine   = 0 # Placeholder, will be recalculated
                 }
 
-                $entities.Add($newHostBlock)
-                $entities.Add($blankAfter)
-                Write-Verbose "Manually inserted new host block and blank line"
+                $Entities.Add($newHostBlock)
+                $Entities.Add($blankAfter)
+                Write-Debug "Manually inserted new host block and blank line"
             }
             else {
-                $entities = Insert-SshHostBlock -Entities $entities -InsertionIndex $insertionIndex -BlockText $blockText
-                Write-Verbose "Host block inserted via Insert-SshHostBlock"
+                $Entities = Insert-SshHostBlock -Entities $Entities -InsertionIndex $insertionIndex -BlockText $blockText
             }
         }
     }
 
+    # If PassThru, return entities without saving
+    if ($PassThru) {
+        Write-Debug "PassThru: returning modified entities without saving"
+        return $Entities
+    }
+
     # Save the modified configuration
     $saveParams = @{
-        Entities = $entities
+        Entities = $Entities
         Path     = $Path
     }
     if ($NoBackup) {
@@ -289,12 +336,13 @@ function Set-SshHostBlock {
 
     # Return summary information
     if (-not $WhatIfPreference) {
-        Write-Verbose "Configuration saved successfully"
+        $action = if ($existing) { 'Updated' } else { 'Inserted' }
+        Write-Verbose "$action host block '$($processedPatterns -join ' ')'"
         
         return [PSCustomObject]@{
             Path      = $Path
             Patterns  = $processedPatterns
-            Action    = if ($existing) { 'Updated' } else { 'Inserted' }
+            Action    = $action
             LineRange = if ($existing) { 
                 "$($existing.StartLine)-$($existing.EndLine)" 
             } else { 

@@ -97,6 +97,36 @@ Host internal-server
     Port 2222
 ```
 
+### Batch Operations
+
+When you need to create, update, or remove multiple host blocks at once, use `-Entities` and `-PassThru` to compose changes in memory before a single save. This reduces file I/O and produces only one backup for the entire batch.
+
+```powershell
+# Add an entire environment in one save
+$path = "$env:USERPROFILE\.ssh\config"
+$entities = Get-SshConfigEntities -Path $path
+
+$entities = Set-SshHostBlock -Entities $entities -Patterns 'jumpex' -HostName 'jump.example.com' -IsBastion -PassThru
+$entities = Set-SshHostBlock -Entities $entities -Patterns 'exserver' -HostName '%h.example.com' -JumpHost 'jumpex' -PassThru
+$entities = Set-SshHostBlock -Entities $entities -Patterns 'exserver.example.com' -HostName '%h' -JumpHost 'jumpex' -PassThru
+
+Save-SshConfig -Entities $entities -Path $path
+```
+
+Removals work the same way, and can be mixed with additions:
+
+```powershell
+# Replace an old environment with a new one
+$entities = Get-SshConfigEntities -Path $path
+
+$entities = Remove-SshHostBlock -Entities $entities -Patterns 'old-server' -RemoveBlankLines -PassThru
+$entities = Remove-SshHostBlock -Entities $entities -Patterns 'old-bastion' -RemoveBlankLines -PassThru
+$entities = Set-SshHostBlock -Entities $entities -Patterns 'new-bastion' -HostName '10.0.0.1' -IsBastion -PassThru
+$entities = Set-SshHostBlock -Entities $entities -Patterns 'new-server' -HostName '10.0.0.50' -JumpHost 'new-bastion' -PassThru
+
+Save-SshConfig -Entities $entities -Path $path
+```
+
 ## Components
 
 ### High-Level Operations (Primary API)
@@ -191,6 +221,9 @@ Save-SshConfig -Entities $entities -Path "~/.ssh/config"
 - No external dependencies
 
 ## Version History
+
+### v2.2.0 (2026-04-01)
+- Added `-Entities` and `-PassThru` parameters to `Set-SshHostBlock`, `Remove-SshHostBlock`, and `Rename-SshHostBlock` for batch operations. Multiple host blocks can now be created, updated, removed, and renamed in memory before a single `Save-SshConfig` call, reducing file I/O and producing only one backup per batch.
 
 ### v2.1.1 (2026-03-18)
 - Fixed ACL preservation in `Save-SshConfig` and `Update-SshConfig`: original file permissions are now restored after the file is at its final destination, instead of being applied to the temp file before the move. This prevents permission drift caused by inconsistent `Move-Item` ACL behavior.
